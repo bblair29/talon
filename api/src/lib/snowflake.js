@@ -1,38 +1,48 @@
 import snowflake from 'snowflake-sdk';
 
-snowflake.configure({ logLevel: 'ERROR' });
+try {
+  snowflake.configure({ logLevel: 'ERROR' });
+} catch {
+  // Older SDK versions may not support string log levels
+}
 
 function getConnection() {
   return new Promise((resolve, reject) => {
     const conn = snowflake.createConnection({
-      account: process.env.SNOWFLAKE_ACCOUNT,
-      username: process.env.SNOWFLAKE_USER,
-      password: process.env.SNOWFLAKE_PASSWORD,
+      account: process.env.SNOWFLAKE_ACCOUNT || '',
+      username: process.env.SNOWFLAKE_USER || '',
+      password: process.env.SNOWFLAKE_PASSWORD || '',
       database: process.env.SNOWFLAKE_DATABASE || 'TALON',
       schema: process.env.SNOWFLAKE_SCHEMA || 'TRADING',
       warehouse: process.env.SNOWFLAKE_WAREHOUSE || 'TALON_WH',
     });
 
-    conn.connect((err, conn) => {
-      if (err) reject(err);
+    conn.connect((err) => {
+      if (err) reject(new Error(`Snowflake connection failed: ${err.message}`));
       else resolve(conn);
     });
   });
 }
 
 export async function query(sql, binds = []) {
-  const conn = await getConnection();
-  return new Promise((resolve, reject) => {
-    conn.execute({
-      sqlText: sql,
-      binds,
-      complete: (err, stmt, rows) => {
-        conn.destroy();
-        if (err) reject(err);
-        else resolve(rows || []);
-      },
+  let conn;
+  try {
+    conn = await getConnection();
+    return await new Promise((resolve, reject) => {
+      conn.execute({
+        sqlText: sql,
+        binds,
+        complete: (err, stmt, rows) => {
+          if (err) reject(new Error(`Snowflake query failed: ${err.message}`));
+          else resolve(rows || []);
+        },
+      });
     });
-  });
+  } finally {
+    if (conn) {
+      try { conn.destroy(); } catch {}
+    }
+  }
 }
 
 export async function queryOne(sql, binds = []) {
