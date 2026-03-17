@@ -4,7 +4,8 @@ screener:
   min_avg_volume: 1_000_000
   min_atr_pct: 1.5          # ATR as % of price — filters for volatile movers
   lookback_days: 20
-  universe:                  # Leave empty to scan all tradable assets
+  universe:
+    # Mega-cap reliable movers
     - AAPL
     - MSFT
     - TSLA
@@ -13,18 +14,35 @@ screener:
     - META
     - AMZN
     - GOOG
+    - NFLX
+    # ETFs
     - SPY
     - QQQ
-    - NFLX
-    - BA
+    - IWM
+    - TQQQ
+    - SOXL
+    # High-beta / momentum names
     - COIN
     - PLTR
     - SOFI
-    - SNAP
-    - SQ
     - UBER
     - ROKU
     - SHOP
+    - MARA
+    - RIOT
+    - SMCI
+    - CRWD
+    - PANW
+    - SNOW
+    - DKNG
+    - HOOD
+    - AFRM
+    - RBLX
+    - BA
+    - MU
+    - SNAP
+    - ARM
+    - MSTR
 
 risk:
   max_daily_loss_pct: 3.0    # Halt trading after this % loss from session start
@@ -32,6 +50,31 @@ risk:
   max_position_size_pct: 10.0
   default_stop_loss_pct: 2.0
   default_take_profit_pct: 4.0
+
+session:
+  daily_target_pct: 1.0       # Stop opening new trades after hitting +1%
+  daily_stop_pct: 1.5         # Halt all trading after -1.5% loss
+
+  trading_windows:             # Only trade during these ET windows
+    - start: "09:35"           # Skip first 5 min (opening chaos)
+      end: "11:30"             # Morning momentum window
+    - start: "14:00"           # Afternoon push
+      end: "15:45"             # Stop 15 min before close
+
+  max_per_sector: 2            # Max positions in same sector (correlation guard)
+
+  # Adaptive symbol tracking
+  max_consecutive_losses: 3    # Block symbol after 3 straight losses
+  min_win_rate_to_continue: 30 # Block if win rate drops below 30% after 5+ trades
+  min_trades_for_cutoff: 5
+
+  # Premarket gap filter
+  max_gap_pct: 4.0             # Skip stocks that gapped >4% overnight
+
+  # Multi-timeframe confirmation
+  mtf_enabled: true
+  mtf_timeframe: "15Min"       # Higher TF to confirm trend
+  mtf_ema_period: 21           # Price must be above this EMA on higher TF
 
 data:
   bar_timeframe: "1Min"

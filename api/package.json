@@ -1,0 +1,12 @@
+{
+  "name": "talon-api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "func start",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "@alpacahq/alpaca-trade-api": "^3.2.0"
+  }
+}

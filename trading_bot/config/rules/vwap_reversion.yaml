@@ -1,0 +1,21 @@
+name: vwap_reversion
+type: VWAPMeanReversionRule
+enabled: true
+description: "VWAP mean reversion — buy dips below VWAP, sell on snap-back"
+
+entry:
+  vwap_dip_pct: 0.3          # Price must be 0.3%+ below VWAP
+  rsi_period: 14
+  rsi_max: 40                 # RSI must confirm oversold
+  volume_multiplier: 1.2      # Volume above average
+
+exit:
+  take_profit_pct: 1.0        # Quick 1% target
+  stop_loss_pct: 0.5          # Tight stop — wrong? get out fast
+  trailing_stop_pct: 0.3      # Lock in gains with tight trail
+  max_hold_minutes: 60        # 1 hour max — this is a scalp
+
+sizing:
+  equity_pct: 4.0
+
+symbols: auto

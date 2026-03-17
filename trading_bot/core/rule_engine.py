@@ -4,12 +4,16 @@ from pathlib import Path
 import yaml
 
 from trading_bot.rules.base_rule import BaseRule
-from trading_bot.rules.pnl_rules import MomentumPnLRule, RSIPnLRule
+from trading_bot.rules.pnl_rules import (
+    MomentumPnLRule, RSIPnLRule, VWAPMeanReversionRule, ScalperRule,
+)
 from trading_bot.utils.logger import log
 
 RULE_TYPE_MAP: dict[str, type[BaseRule]] = {
     "MomentumPnLRule": MomentumPnLRule,
     "RSIPnLRule": RSIPnLRule,
+    "VWAPMeanReversionRule": VWAPMeanReversionRule,
+    "ScalperRule": ScalperRule,
 }
 
 

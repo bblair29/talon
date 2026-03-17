@@ -49,25 +49,30 @@ class PositionManager:
         )
         return order_id
 
-    def check_exits(self):
+    def check_exits(self) -> list[dict]:
+        """Check all positions for exit conditions.
+
+        Returns list of closed trades: [{"symbol": str, "pnl": float, "reason": str}]
+        """
         if not self.tracked:
-            return
+            return []
 
         broker_positions = {p["symbol"]: p for p in self.broker.get_positions()}
 
         closed = []
+        closed_trades = []
         for symbol, pos in self.tracked.items():
             bp = broker_positions.get(symbol)
             if bp is None:
-                # Position was closed externally
                 log.info(f"{symbol} no longer in broker — removing from tracker")
                 closed.append(symbol)
+                closed_trades.append({"symbol": symbol, "pnl": 0.0, "reason": "EXTERNAL"})
                 continue
 
             current_price = bp["current_price"]
             pnl_pct = ((current_price - pos.entry_price) / pos.entry_price) * 100
+            pnl_dollar = (current_price - pos.entry_price) * pos.qty
 
-            # Update high water mark for trailing stop
             if current_price > pos.high_water_mark:
                 pos.high_water_mark = current_price
 
@@ -76,12 +81,15 @@ class PositionManager:
                 self.broker.close_position(symbol)
                 log.info(
                     f"[trade]EXIT {symbol}: {exit_reason} "
-                    f"(P&L: {pnl_pct:+.2f}%, price: ${current_price:.2f})[/trade]"
+                    f"(P&L: {pnl_pct:+.2f}%, ${pnl_dollar:+.2f})[/trade]"
                 )
                 closed.append(symbol)
+                closed_trades.append({"symbol": symbol, "pnl": pnl_dollar, "reason": exit_reason})
 
         for symbol in closed:
             del self.tracked[symbol]
+
+        return closed_trades
 
     def _should_exit(self, pos: TrackedPosition, current_price: float, pnl_pct: float) -> str | None:
         # Take profit
