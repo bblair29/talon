@@ -26,9 +26,9 @@ class Screener:
         for symbol in self.universe:
             try:
                 df = self.broker.get_bars(
-                    symbol, timeframe="1Day", lookback_days=self.lookback_days, limit=self.lookback_days
+                    symbol, timeframe="1Day", lookback_days=self.lookback_days + 15, limit=self.lookback_days + 10
                 )
-                if df.empty or len(df) < 10:
+                if df.empty or len(df) < 15:
                     continue
 
                 last_close = df["close"].iloc[-1]
@@ -40,7 +40,7 @@ class Screener:
                     continue
 
                 atr_series = atr(df, period=14)
-                if atr_series.dropna().empty:
+                if atr_series is None or atr_series.dropna().empty:
                     continue
                 atr_val = atr_series.iloc[-1]
                 atr_pct = (atr_val / last_close) * 100

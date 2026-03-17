@@ -1,0 +1,23 @@
+name: scalper
+type: ScalperRule
+enabled: true
+description: "Bollinger Band bounce scalper — quick entries at support with tight exits"
+
+entry:
+  bb_period: 20
+  bb_std: 2.0
+  stoch_k: 14
+  stoch_d: 3
+  stoch_oversold: 25          # Stochastic must be oversold
+  adx_min: 20                 # Need some trend, not dead flat
+
+exit:
+  take_profit_pct: 1.0        # 1% target per trade
+  stop_loss_pct: 0.5          # Tight 0.5% stop
+  trailing_stop_pct: 0.4      # Trail tightly after going green
+  max_hold_minutes: 45        # 45 min max — scalps are fast
+
+sizing:
+  equity_pct: 5.0
+
+symbols: auto
