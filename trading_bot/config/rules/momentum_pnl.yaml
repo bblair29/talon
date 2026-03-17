@@ -1,0 +1,21 @@
+name: momentum_pnl
+type: MomentumPnLRule
+enabled: true
+description: "EMA crossover with volume confirmation"
+
+entry:
+  fast_ema: 9
+  slow_ema: 21
+  volume_avg_period: 20
+  volume_multiplier: 1.0     # Current volume must exceed avg * this
+
+exit:
+  take_profit_pct: 3.0
+  stop_loss_pct: 1.5
+  trailing_stop_pct: null     # No trailing stop for this rule
+  max_hold_minutes: 120       # 2 hours
+
+sizing:
+  equity_pct: 5.0             # Risk 5% of equity per trade
+
+symbols: auto                  # Populated from screener results

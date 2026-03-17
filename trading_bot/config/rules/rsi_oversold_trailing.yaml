@@ -1,0 +1,24 @@
+name: rsi_oversold_trailing
+type: RSIPnLRule
+enabled: false
+description: "RSI oversold bounce with trailing stop"
+
+entry:
+  rsi_period: 14
+  rsi_threshold: 32           # Enter when RSI drops below this
+  ema_period: 50              # Price must be above this EMA (uptrend filter)
+
+exit:
+  take_profit_pct: 5.0
+  stop_loss_pct: 2.0
+  trailing_stop_pct: 1.5
+  max_hold_minutes: 240       # 4 hours
+
+sizing:
+  equity_pct: 4.0
+
+symbols:
+  - TSLA
+  - NVDA
+  - AMD
+  - SPY

@@ -1,0 +1,41 @@
+screener:
+  min_price: 10.0
+  max_price: 500.0
+  min_avg_volume: 1_000_000
+  min_atr_pct: 1.5          # ATR as % of price — filters for volatile movers
+  lookback_days: 20
+  universe:                  # Leave empty to scan all tradable assets
+    - AAPL
+    - MSFT
+    - TSLA
+    - NVDA
+    - AMD
+    - META
+    - AMZN
+    - GOOG
+    - SPY
+    - QQQ
+    - NFLX
+    - BA
+    - COIN
+    - PLTR
+    - SOFI
+    - SNAP
+    - SQ
+    - UBER
+    - ROKU
+    - SHOP
+
+risk:
+  max_daily_loss_pct: 3.0    # Halt trading after this % loss from session start
+  max_open_positions: 5
+  max_position_size_pct: 10.0
+  default_stop_loss_pct: 2.0
+  default_take_profit_pct: 4.0
+
+data:
+  bar_timeframe: "1Min"
+  lookback_bars: 100          # How many bars to fetch for indicator calc
+
+loop:
+  interval_seconds: 30        # Main loop tick rate
