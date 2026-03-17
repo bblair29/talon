@@ -6,6 +6,7 @@ import Rules from './pages/Rules'
 import Trades from './pages/Trades'
 import Analytics from './pages/Analytics'
 import Scanner from './pages/Scanner'
+import RuleComposer from './pages/RuleComposer'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/scanner" element={<Scanner />} />
         <Route path="/backtester" element={<Backtester />} />
         <Route path="/rules" element={<Rules />} />
+        <Route path="/composer" element={<RuleComposer />} />
         <Route path="/trades" element={<Trades />} />
         <Route path="/analytics" element={<Analytics />} />
       </Route>

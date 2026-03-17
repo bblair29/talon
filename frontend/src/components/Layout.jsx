@@ -4,6 +4,7 @@ import {
   Radar,
   FlaskConical,
   BookOpen,
+  Wand2,
   History,
   BarChart3,
   Crosshair,
@@ -14,6 +15,7 @@ const navItems = [
   { to: '/scanner', icon: Radar, label: 'Reliable Movers' },
   { to: '/backtester', icon: FlaskConical, label: 'Backtester' },
   { to: '/rules', icon: BookOpen, label: 'Rules' },
+  { to: '/composer', icon: Wand2, label: 'Rule Composer' },
   { to: '/trades', icon: History, label: 'Trades' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
 ]

@@ -76,6 +76,28 @@ session:
   mtf_timeframe: "15Min"       # Higher TF to confirm trend
   mtf_ema_period: 21           # Price must be above this EMA on higher TF
 
+  # Momentum rescore
+  momentum_rescore_minutes: 30  # Re-rank symbols by live momentum every N min
+
+alerts:
+  enabled: false               # Set to true + add webhook URL to activate
+  teams_webhook_url: ""        # Set via TEAMS_WEBHOOK_URL env var or here
+  notify_on_trade: true
+  notify_on_exit: true
+  notify_on_daily_target: true
+  notify_on_kill_switch: true
+  notify_on_session_summary: true
+
+logging:
+  local_enabled: true
+  local_dir: "logs/trades"
+  snowflake_enabled: false     # Set to true + configure SF creds to activate
+  sf_account: ""               # Or set SNOWFLAKE_ACCOUNT env var
+  sf_user: ""                  # Or set SNOWFLAKE_USER env var
+  sf_database: "TALON"
+  sf_schema: "TRADING"
+  sf_warehouse: "COMPUTE_WH"
+
 data:
   bar_timeframe: "1Min"
   lookback_bars: 100          # How many bars to fetch for indicator calc
