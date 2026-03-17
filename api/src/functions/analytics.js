@@ -1,6 +1,5 @@
 import { app } from '@azure/functions';
-import { spawn } from 'child_process';
-import path from 'path';
+import { query } from '../lib/snowflake.js';
 
 app.http('analytics', {
   methods: ['GET'],
@@ -11,168 +10,118 @@ app.http('analytics', {
       const url = new URL(request.url);
       const days = parseInt(url.searchParams.get('days') || '30');
 
-      const result = await new Promise((resolve, reject) => {
-        const pythonScript = `
-import json, sys, os
-from datetime import datetime, timedelta
-from pathlib import Path
-from collections import defaultdict
+      // Run all queries in parallel
+      const [trades, dailySummaries, exitCounts, ruleStats] = await Promise.all([
+        // Daily P&L + symbol P&L from trade history
+        query(
+          `SELECT session_date, symbol, pnl
+           FROM TRADE_HISTORY
+           WHERE session_date >= DATEADD('day', -?, CURRENT_DATE())`,
+          [days]
+        ),
+        // Daily summaries
+        query(
+          `SELECT session_date, start_equity, realized_pnl, total_trades,
+                  winning_trades, losing_trades, win_rate
+           FROM DAILY_SUMMARY
+           WHERE session_date >= DATEADD('day', -?, CURRENT_DATE())
+           ORDER BY session_date ASC`,
+          [days]
+        ),
+        // Exit distribution
+        query(
+          `SELECT exit_reason, COUNT(*) as cnt
+           FROM TRADE_HISTORY
+           WHERE session_date >= DATEADD('day', -?, CURRENT_DATE())
+           GROUP BY exit_reason`,
+          [days]
+        ),
+        // Rule performance
+        query(
+          `SELECT rule_name,
+                  COUNT(*) as trades,
+                  ROUND(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) * 100, 1) as win_rate,
+                  ROUND(SUM(pnl), 2) as total_pnl,
+                  ROUND(
+                    NULLIF(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) /
+                    NULLIF(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0)
+                  , 2) as profit_factor,
+                  ROUND(AVG(pnl) / NULLIF(STDDEV(pnl), 0), 2) as sharpe
+           FROM TRADE_HISTORY
+           WHERE session_date >= DATEADD('day', -?, CURRENT_DATE())
+           GROUP BY rule_name`,
+          [days]
+        ),
+      ]);
 
-trades_dir = Path('logs/trades')
-cutoff = (datetime.now() - timedelta(days=${days})).strftime('%Y-%m-%d')
+      // Daily P&L aggregation
+      const dailyMap = {};
+      for (const t of trades) {
+        const d = t.SESSION_DATE;
+        dailyMap[d] = (dailyMap[d] || 0) + (t.PNL || 0);
+      }
+      const daily_pnl = Object.entries(dailyMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, pnl]) => ({ date, pnl: Math.round(pnl * 100) / 100 }));
 
-# Collect all trades
-all_trades = []
-if trades_dir.exists():
-    for f in sorted(trades_dir.glob('trades_*.jsonl'), reverse=True):
-        date_str = f.stem.replace('trades_', '')
-        if date_str < cutoff:
-            break
-        with open(f) as fh:
-            for line in fh:
-                line = line.strip()
-                if line:
-                    all_trades.append(json.loads(line))
+      // Symbol P&L aggregation
+      const symbolMap = {};
+      for (const t of trades) {
+        symbolMap[t.SYMBOL] = (symbolMap[t.SYMBOL] || 0) + (t.PNL || 0);
+      }
+      const symbol_pnl = Object.entries(symbolMap)
+        .map(([symbol, pnl]) => ({ symbol, pnl: Math.round(pnl * 100) / 100 }))
+        .sort((a, b) => b.pnl - a.pnl);
 
-# Collect daily summaries
-daily_summaries = []
-if trades_dir.exists():
-    for f in sorted(trades_dir.glob('summary_*.json'), reverse=True):
-        date_str = f.stem.replace('summary_', '')
-        if date_str < cutoff:
-            break
-        with open(f) as fh:
-            daily_summaries.append(json.load(fh))
+      // Exit distribution
+      const exitColors = {
+        TAKE_PROFIT: 'var(--talon-green)',
+        STOP_LOSS: 'var(--talon-red)',
+        MAX_HOLD: 'var(--talon-yellow)',
+        TRAILING_STOP: 'var(--talon-accent)',
+      };
+      const exit_distribution = exitCounts.map((r) => ({
+        name: r.EXIT_REASON,
+        value: r.CNT,
+        color: exitColors[r.EXIT_REASON] || 'var(--talon-muted)',
+      }));
 
-# Daily P&L
-daily_pnl_map = defaultdict(float)
-for t in all_trades:
-    date = t.get('session_date', t.get('exit_time', '')[:10])
-    daily_pnl_map[date] += t.get('pnl', 0)
+      // Rule performance
+      const rule_performance = ruleStats.map((r) => ({
+        rule: r.RULE_NAME,
+        trades: r.TRADES,
+        win_rate: r.WIN_RATE || 0,
+        pnl: r.TOTAL_PNL || 0,
+        profit_factor: r.PROFIT_FACTOR || 0,
+        sharpe: r.SHARPE || 0,
+      }));
 
-daily_pnl = [{'date': d, 'pnl': round(v, 2)} for d, v in sorted(daily_pnl_map.items())]
+      // Equity history from daily summaries
+      const equity_history = dailySummaries.map((ds) => ({
+        date: ds.SESSION_DATE,
+        equity: Math.round(((ds.START_EQUITY || 0) + (ds.REALIZED_PNL || 0)) * 100) / 100,
+      }));
 
-# Symbol P&L
-symbol_pnl_map = defaultdict(float)
-for t in all_trades:
-    symbol_pnl_map[t.get('symbol', 'UNKNOWN')] += t.get('pnl', 0)
+      // Top-level stats
+      const totalPnl = trades.reduce((s, t) => s + (t.PNL || 0), 0);
+      const totalTrades = trades.length;
+      const wins = trades.filter((t) => (t.PNL || 0) > 0).length;
+      const dailyVals = daily_pnl.map((d) => d.pnl);
 
-symbol_pnl = sorted(
-    [{'symbol': s, 'pnl': round(v, 2)} for s, v in symbol_pnl_map.items()],
-    key=lambda x: x['pnl'], reverse=True
-)
-
-# Exit distribution
-exit_counts = defaultdict(int)
-for t in all_trades:
-    exit_counts[t.get('exit_reason', 'UNKNOWN')] += 1
-
-exit_colors = {
-    'TAKE_PROFIT': 'var(--talon-green)',
-    'STOP_LOSS': 'var(--talon-red)',
-    'MAX_HOLD': 'var(--talon-yellow)',
-    'TRAILING_STOP': 'var(--talon-accent)',
-}
-exit_dist = [{'name': k, 'value': v, 'color': exit_colors.get(k, 'var(--talon-muted)')}
-             for k, v in exit_counts.items()]
-
-# Rule performance
-rule_stats = defaultdict(lambda: {'trades': 0, 'wins': 0, 'gross_profit': 0, 'gross_loss': 0, 'pnls': []})
-for t in all_trades:
-    rule = t.get('rule_name', 'unknown')
-    pnl = t.get('pnl', 0)
-    rule_stats[rule]['trades'] += 1
-    rule_stats[rule]['pnls'].append(pnl)
-    if pnl > 0:
-        rule_stats[rule]['wins'] += 1
-        rule_stats[rule]['gross_profit'] += pnl
-    else:
-        rule_stats[rule]['gross_loss'] += abs(pnl)
-
-rule_perf = []
-for rule, s in rule_stats.items():
-    win_rate = (s['wins'] / s['trades'] * 100) if s['trades'] > 0 else 0
-    pf = (s['gross_profit'] / s['gross_loss']) if s['gross_loss'] > 0 else 0
-    avg = sum(s['pnls']) / len(s['pnls']) if s['pnls'] else 0
-    # Sharpe approximation
-    import math
-    if len(s['pnls']) > 1:
-        mean = sum(s['pnls']) / len(s['pnls'])
-        variance = sum((x - mean) ** 2 for x in s['pnls']) / (len(s['pnls']) - 1)
-        std = math.sqrt(variance) if variance > 0 else 1
-        sharpe = round(mean / std, 2)
-    else:
-        sharpe = 0
-
-    rule_perf.append({
-        'rule': rule,
-        'trades': s['trades'],
-        'win_rate': round(win_rate, 1),
-        'pnl': round(sum(s['pnls']), 2),
-        'profit_factor': round(pf, 2),
-        'sharpe': sharpe,
-    })
-
-# Equity history from daily summaries
-equity_history = []
-for ds in sorted(daily_summaries, key=lambda x: x.get('session_date', '')):
-    eq = ds.get('start_equity', 0) + ds.get('realized_pnl', 0)
-    equity_history.append({
-        'date': ds.get('session_date', ''),
-        'equity': round(eq, 2),
-    })
-
-# Top-level stats
-total_pnl = sum(t.get('pnl', 0) for t in all_trades)
-total_trades = len(all_trades)
-wins = sum(1 for t in all_trades if t.get('pnl', 0) > 0)
-win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-daily_vals = [v['pnl'] for v in daily_pnl] if daily_pnl else [0]
-best_day = max(daily_vals)
-worst_day = min(daily_vals)
-
-analytics = {
-    'total_pnl': round(total_pnl, 2),
-    'total_trades': total_trades,
-    'win_rate': round(win_rate, 1),
-    'best_day': round(best_day, 2),
-    'worst_day': round(worst_day, 2),
-    'daily_pnl': daily_pnl,
-    'symbol_pnl': symbol_pnl,
-    'exit_distribution': exit_dist,
-    'rule_performance': rule_perf,
-    'equity_history': equity_history,
-}
-
-print(json.dumps(analytics))
-`;
-
-        const proc = spawn('python', ['-c', pythonScript], {
-          cwd: path.resolve('..'),
-          env: { ...process.env },
-          timeout: 30000,
-        });
-
-        let stdout = '';
-        let stderr = '';
-        proc.stdout.on('data', (d) => { stdout += d; });
-        proc.stderr.on('data', (d) => { stderr += d; });
-        proc.on('close', (code) => {
-          if (code !== 0) {
-            reject(new Error(stderr || `Process exited with code ${code}`));
-          } else {
-            try {
-              const lines = stdout.trim().split('\n');
-              const jsonLine = lines[lines.length - 1];
-              resolve(JSON.parse(jsonLine));
-            } catch (e) {
-              reject(new Error(`Failed to parse output: ${stdout}`));
-            }
-          }
-        });
-      });
-
-      return { jsonBody: result };
+      return {
+        jsonBody: {
+          total_pnl: Math.round(totalPnl * 100) / 100,
+          total_trades: totalTrades,
+          win_rate: totalTrades > 0 ? Math.round((wins / totalTrades) * 1000) / 10 : 0,
+          best_day: dailyVals.length > 0 ? Math.max(...dailyVals) : 0,
+          worst_day: dailyVals.length > 0 ? Math.min(...dailyVals) : 0,
+          daily_pnl,
+          symbol_pnl,
+          exit_distribution,
+          rule_performance,
+          equity_history,
+        },
+      };
     } catch (err) {
       return { status: 500, jsonBody: { error: err.message } };
     }
