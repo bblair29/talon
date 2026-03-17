@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import {
-  Wand2, Copy, Download, Plus, Trash2, ChevronRight,
+  Wand2, Copy, Download, Save, Loader2, CheckCircle,
 } from 'lucide-react'
+import { postApi } from '../hooks/useApi'
 
 const RULE_TYPES = [
   {
@@ -68,6 +69,8 @@ export default function RuleComposer() {
   const [enabled, setEnabled] = useState(true)
   const [symbolMode, setSymbolMode] = useState('auto')
   const [manualSymbols, setManualSymbols] = useState('TSLA, NVDA, AMD')
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState(null)
 
   const typeConfig = RULE_TYPES.find((t) => t.value === selectedType)
   const [entry, setEntry] = useState({ ...typeConfig.defaults.entry })
@@ -81,6 +84,17 @@ export default function RuleComposer() {
     setExit({ ...cfg.defaults.exit })
     setSizing({ ...cfg.defaults.sizing })
   }
+
+  const buildRuleObject = () => ({
+    name,
+    type: selectedType,
+    enabled,
+    description: description || typeConfig.description,
+    entry,
+    exit,
+    sizing,
+    symbols: symbolMode === 'auto' ? 'auto' : manualSymbols.split(',').map((s) => s.trim()).filter(Boolean),
+  })
 
   const generateYaml = () => {
     const lines = [
@@ -119,12 +133,26 @@ export default function RuleComposer() {
     URL.revokeObjectURL(url)
   }
 
+  const deployRule = async () => {
+    setSaving(true)
+    setSaveResult(null)
+    try {
+      const rule = buildRuleObject()
+      await postApi('/rules', rule)
+      setSaveResult({ success: true, message: `Rule "${name}" deployed successfully!` })
+    } catch (err) {
+      setSaveResult({ success: false, message: err.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold" style={{ color: 'var(--talon-text)' }}>Rule Composer</h2>
         <p className="text-sm" style={{ color: 'var(--talon-muted)' }}>
-          Build trading rules visually — generates YAML ready to deploy
+          Build trading rules visually — deploy directly or download YAML
         </p>
       </div>
 
@@ -227,7 +255,7 @@ export default function RuleComposer() {
           </div>
         </div>
 
-        {/* YAML Preview */}
+        {/* YAML Preview & Deploy */}
         <div className="space-y-4">
           <div className="stat-card">
             <div className="flex items-center justify-between mb-3">
@@ -239,38 +267,34 @@ export default function RuleComposer() {
                   <Copy size={12} /> Copy
                 </button>
                 <button onClick={downloadFile}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-                  style={{ background: 'var(--talon-accent)' }}>
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                  style={{ borderColor: 'var(--talon-border)', color: 'var(--talon-muted)' }}>
                   <Download size={12} /> Download
+                </button>
+                <button onClick={deployRule} disabled={saving}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: saving ? 'var(--talon-muted)' : 'var(--talon-green)' }}>
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  {saving ? 'Deploying...' : 'Deploy Rule'}
                 </button>
               </div>
             </div>
+
+            {saveResult && (
+              <div className="mb-3 px-3 py-2 rounded-lg text-xs font-medium"
+                style={{
+                  background: saveResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                  color: saveResult.success ? 'var(--talon-green)' : 'var(--talon-red)',
+                }}>
+                {saveResult.success && <CheckCircle size={12} className="inline mr-1" />}
+                {saveResult.message}
+              </div>
+            )}
+
             <pre className="text-xs font-mono p-4 rounded-lg overflow-x-auto whitespace-pre"
               style={{ background: 'var(--talon-bg)', color: 'var(--talon-text)', border: '1px solid var(--talon-border)' }}>
               {yaml}
             </pre>
-          </div>
-
-          <div className="stat-card">
-            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--talon-muted)' }}>How to Deploy</h3>
-            <ol className="text-xs space-y-2" style={{ color: 'var(--talon-muted)' }}>
-              <li className="flex gap-2">
-                <span className="font-bold" style={{ color: 'var(--talon-accent)' }}>1.</span>
-                Download or copy the YAML above
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold" style={{ color: 'var(--talon-accent)' }}>2.</span>
-                Save as <code className="px-1 rounded" style={{ background: 'var(--talon-surface-2)' }}>trading_bot/config/rules/{name}.yaml</code>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold" style={{ color: 'var(--talon-accent)' }}>3.</span>
-                TALON auto-discovers it on next startup
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold" style={{ color: 'var(--talon-accent)' }}>4.</span>
-                Backtest it first on the Backtester page before enabling live
-              </li>
-            </ol>
           </div>
 
           {/* Quick presets */}

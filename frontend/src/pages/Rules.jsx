@@ -1,72 +1,57 @@
 import { useState } from 'react'
-import { BookOpen, ToggleLeft, ToggleRight, ChevronDown, ChevronUp } from 'lucide-react'
-
-const MOCK_RULES = [
-  {
-    name: 'scalper',
-    type: 'ScalperRule',
-    enabled: true,
-    description: 'Bollinger Band bounce scalper — quick entries at support with tight exits',
-    entry: { bb_period: 20, bb_std: 2.0, stoch_k: 14, stoch_d: 3, stoch_oversold: 25, adx_min: 20 },
-    exit: { take_profit_pct: 1.0, stop_loss_pct: 0.5, trailing_stop_pct: 0.4, max_hold_minutes: 45 },
-    sizing: { equity_pct: 5.0 },
-    symbols: 'auto (from screener)',
-    tag: '1% TARGET',
-  },
-  {
-    name: 'vwap_reversion',
-    type: 'VWAPMeanReversionRule',
-    enabled: true,
-    description: 'VWAP mean reversion — buy dips below VWAP, sell on snap-back',
-    entry: { vwap_dip_pct: 0.3, rsi_period: 14, rsi_max: 40, volume_multiplier: 1.2 },
-    exit: { take_profit_pct: 1.0, stop_loss_pct: 0.5, trailing_stop_pct: 0.3, max_hold_minutes: 60 },
-    sizing: { equity_pct: 4.0 },
-    symbols: 'auto (from screener)',
-    tag: '1% TARGET',
-  },
-  {
-    name: 'momentum_pnl',
-    type: 'MomentumPnLRule',
-    enabled: true,
-    description: 'EMA crossover with volume confirmation',
-    entry: { fast_ema: 9, slow_ema: 21, volume_avg_period: 20, volume_multiplier: 1.0 },
-    exit: { take_profit_pct: 3.0, stop_loss_pct: 1.5, trailing_stop_pct: null, max_hold_minutes: 120 },
-    sizing: { equity_pct: 5.0 },
-    symbols: 'auto (from screener)',
-  },
-  {
-    name: 'rsi_oversold_trailing',
-    type: 'RSIPnLRule',
-    enabled: false,
-    description: 'RSI oversold bounce with trailing stop',
-    entry: { rsi_period: 14, rsi_threshold: 32, ema_period: 50 },
-    exit: { take_profit_pct: 5.0, stop_loss_pct: 2.0, trailing_stop_pct: 1.5, max_hold_minutes: 240 },
-    sizing: { equity_pct: 4.0 },
-    symbols: 'TSLA, NVDA, AMD, SPY',
-  },
-]
+import { BookOpen, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react'
+import { useApi, postApi } from '../hooks/useApi'
+import { useNavigate } from 'react-router-dom'
 
 function ParamRow({ label, value }) {
   return (
     <div className="flex justify-between py-1.5 border-b" style={{ borderColor: 'var(--talon-border)' }}>
       <span className="text-xs" style={{ color: 'var(--talon-muted)' }}>{label}</span>
       <span className="text-xs font-mono font-semibold" style={{ color: 'var(--talon-text)' }}>
-        {value === null ? '---' : String(value)}
+        {value === null || value === undefined ? '---' : String(value)}
       </span>
     </div>
   )
 }
 
-function RuleCard({ rule }) {
+function RuleCard({ rule, onToggle }) {
   const [expanded, setExpanded] = useState(false)
-  const [enabled, setEnabled] = useState(rule.enabled)
+  const [toggling, setToggling] = useState(false)
+
+  const handleToggle = async () => {
+    setToggling(true)
+    try {
+      const updated = { ...rule, enabled: !rule.enabled }
+      delete updated.filename
+      const res = await fetch(`/api/rules/${rule.name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      })
+      if (res.ok) {
+        onToggle()
+      }
+    } catch (err) {
+      console.error('Failed to toggle rule:', err)
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  const entry = rule.entry || {}
+  const exit = rule.exit || {}
+  const sizing = rule.sizing || {}
+  const symbols = rule.symbols === 'auto' ? 'auto (from screener)' :
+    Array.isArray(rule.symbols) ? rule.symbols.join(', ') : String(rule.symbols || 'auto')
 
   return (
     <div className="stat-card">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => setEnabled(!enabled)} className="transition-colors">
-            {enabled
+          <button onClick={handleToggle} className="transition-colors" disabled={toggling}>
+            {toggling ? (
+              <Loader2 size={28} className="animate-spin" style={{ color: 'var(--talon-muted)' }} />
+            ) : rule.enabled
               ? <ToggleRight size={28} style={{ color: 'var(--talon-green)' }} />
               : <ToggleLeft size={28} style={{ color: 'var(--talon-muted)' }} />}
           </button>
@@ -75,25 +60,23 @@ function RuleCard({ rule }) {
               <h3 className="text-sm font-bold" style={{ color: 'var(--talon-text)' }}>
                 {rule.name}
               </h3>
-              {rule.tag && (
-                <span className="text-xs px-1.5 py-0.5 rounded font-bold"
-                  style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--talon-accent)' }}>
-                  {rule.tag}
-                </span>
-              )}
+              <span className="text-xs px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--talon-accent)' }}>
+                {rule.type}
+              </span>
             </div>
             <p className="text-xs" style={{ color: 'var(--talon-muted)' }}>
-              {rule.type} — {rule.description}
+              {rule.description}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs px-2 py-1 rounded-md font-medium"
             style={{
-              background: enabled ? 'rgba(16,185,129,0.1)' : 'rgba(100,116,139,0.1)',
-              color: enabled ? 'var(--talon-green)' : 'var(--talon-muted)',
+              background: rule.enabled ? 'rgba(16,185,129,0.1)' : 'rgba(100,116,139,0.1)',
+              color: rule.enabled ? 'var(--talon-green)' : 'var(--talon-muted)',
             }}>
-            {enabled ? 'ACTIVE' : 'DISABLED'}
+            {rule.enabled ? 'ACTIVE' : 'DISABLED'}
           </span>
           <button onClick={() => setExpanded(!expanded)} className="p-1 rounded hover:bg-white/5">
             {expanded ? <ChevronUp size={16} style={{ color: 'var(--talon-muted)' }} /> :
@@ -107,24 +90,24 @@ function RuleCard({ rule }) {
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-2"
               style={{ color: 'var(--talon-accent)' }}>Entry</h4>
-            {Object.entries(rule.entry).map(([k, v]) => (
+            {Object.entries(entry).map(([k, v]) => (
               <ParamRow key={k} label={k} value={v} />
             ))}
           </div>
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-2"
               style={{ color: 'var(--talon-yellow)' }}>Exit</h4>
-            {Object.entries(rule.exit).map(([k, v]) => (
+            {Object.entries(exit).map(([k, v]) => (
               <ParamRow key={k} label={k} value={v} />
             ))}
           </div>
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-2"
               style={{ color: 'var(--talon-green)' }}>Sizing & Symbols</h4>
-            {Object.entries(rule.sizing).map(([k, v]) => (
+            {Object.entries(sizing).map(([k, v]) => (
               <ParamRow key={k} label={k} value={v} />
             ))}
-            <ParamRow label="symbols" value={rule.symbols} />
+            <ParamRow label="symbols" value={symbols} />
           </div>
         </div>
       )}
@@ -133,24 +116,58 @@ function RuleCard({ rule }) {
 }
 
 export default function Rules() {
+  const { data: rules, loading, error, refetch } = useApi('/rules')
+  const navigate = useNavigate()
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold" style={{ color: 'var(--talon-text)' }}>Rules</h2>
+        </div>
+        <div className="stat-card flex items-center justify-center py-12">
+          <Loader2 size={24} className="animate-spin" style={{ color: 'var(--talon-accent)' }} />
+          <span className="ml-3 text-sm" style={{ color: 'var(--talon-muted)' }}>Loading rules...</span>
+        </div>
+      </div>
+    )
+  }
+
+  const ruleList = rules || []
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold" style={{ color: 'var(--talon-text)' }}>Rules</h2>
-        <p className="text-sm" style={{ color: 'var(--talon-muted)' }}>
-          View and manage trading strategies
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold" style={{ color: 'var(--talon-text)' }}>Rules</h2>
+          <p className="text-sm" style={{ color: 'var(--talon-muted)' }}>
+            {ruleList.length} rules configured | {ruleList.filter(r => r.enabled).length} active
+          </p>
+        </div>
+        <button onClick={refetch} className="p-1.5 rounded-lg hover:bg-white/5"
+          title="Refresh">
+          <RefreshCw size={16} style={{ color: 'var(--talon-muted)' }} />
+        </button>
       </div>
 
+      {error && (
+        <div className="stat-card text-center py-8">
+          <p className="text-sm" style={{ color: 'var(--talon-yellow)' }}>
+            Could not load rules from server. Check that the API is running.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-4">
-        {MOCK_RULES.map((r) => (
-          <RuleCard key={r.name} rule={r} />
+        {ruleList.map((r) => (
+          <RuleCard key={r.name} rule={r} onToggle={refetch} />
         ))}
       </div>
 
       <div className="stat-card flex items-center justify-center py-8 border-dashed"
         style={{ borderStyle: 'dashed' }}>
-        <button className="text-sm font-medium flex items-center gap-2"
+        <button onClick={() => navigate('/composer')}
+          className="text-sm font-medium flex items-center gap-2"
           style={{ color: 'var(--talon-accent)' }}>
           <BookOpen size={16} />
           Add New Rule
